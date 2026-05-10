@@ -39,9 +39,8 @@ jobs:
 
     steps:
       # ──────────────────────────────────────
-      # قدم اول: حذف پوشه downloads (درست مثل دکمه Delete directory)
+      # قدم اول: حذف پوشه downloads (در صورت وجود)
       # ──────────────────────────────────────
-
       - name: 🗑️ حذف پوشهٔ downloads (در صورت وجود)
         if: github.event.inputs.clean_previous == 'true'
         env:
@@ -74,7 +73,6 @@ jobs:
           fi
 
           echo "🔍 پوشهٔ downloads پیدا شد – در حال حذف..."
-          
           echo "📝 ایجاد درخت جدید (فقط با حذف downloads)..."
           NEW_TREE_SHA=$(curl -s -X POST -H "$AUTH" -H "$ACCEPT" \
             -d "{\"base_tree\":\"${TREE_SHA}\",\"tree\":[{\"path\":\"downloads\",\"mode\":\"040000\",\"type\":\"tree\",\"sha\":null}]}" \
@@ -364,7 +362,6 @@ jobs:
       # ──────────────────────────────────────
       # قدم ششم: ساخت/به‌روزرسانی Links.md
       # ──────────────────────────────────────
-
       - name: 📝 ساخت/به‌روزرسانی Links.md (بر اساس فایل‌های واقعی)
         run: |
           export REPO="${{ github.repository }}"
@@ -372,7 +369,7 @@ jobs:
           export BASE_DIR="downloads"
 
           python3 << 'PYEOF'
-          import os, urllib.parse, json
+          import os, urllib.parse
           from pathlib import Path
           from datetime import datetime, timezone, timedelta
 
@@ -380,21 +377,18 @@ jobs:
           branch = os.environ["BRANCH"]
           base_dir = Path(os.environ["BASE_DIR"])
 
-          # جمع‌آوری تمام فایل‌های داخل downloads (بدون فایل‌های مخفی و .json)
           all_files = []
           for f in base_dir.rglob("*"):
               if f.is_file() and not f.name.startswith(".") and f.suffix != ".json":
                   all_files.append(f)
 
           if not all_files:
-              # اگر پوشه خالی بود، Links.md را بازنویسی کن با هدر خالی
               header = "## 🔗 Direct Download Links\n> Click on any link below to start downloading directly.<br><br/>\n\n"
               with open("Links.md", "w") as f:
                   f.write(header)
               print("📂 پوشهٔ downloads خالی است. Links.md بازنویسی شد.")
               exit(0)
 
-          # ساخت لینک‌ها
           lines = []
           ir_tz = timezone(timedelta(hours=3, minutes=30))
           now = datetime.now(timezone.utc).astimezone(ir_tz).strftime("%Y-%m-%d %H:%M IR")
@@ -402,7 +396,6 @@ jobs:
 
           for fpath in sorted(all_files):
               rel_path = fpath.relative_to(base_dir)
-              # ساخت URL خام
               encoded_path = "/".join(urllib.parse.quote(p, safe='') for p in rel_path.parts)
               raw_url = f"https://github.com/{repo}/raw/{branch}/downloads/{encoded_path}"
               
@@ -432,12 +425,11 @@ jobs:
 
           print(f"✅ Links.md با {len(all_files)} فایل به‌روزرسانی شد.")
           PYEOF
-     
-      # ──────────────────────────────────────
-      # قدم هفتم: ارسال فایل‌ها به مخزن
-      # ──────────────────────────────────────
 
-            - name: 📤 ارسال فایل‌های جدید به مخزن (دسته‌بندی بر اساس حجم)
+      # ──────────────────────────────────────
+      # قدم هفتم: ارسال فایل‌ها به مخزن (دسته‌بندی حجم‌محور هوشمند)
+      # ──────────────────────────────────────
+      - name: 📤 ارسال فایل‌های جدید به مخزن (دسته‌بندی بر اساس حجم)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -466,7 +458,6 @@ jobs:
 
           for file in "${NEW_FILES[@]}"; do
             file_size_mb=$(( $(stat -c%s "$file") / 1048576 ))
-            # اگر اضافه کردن این فایل حجم دسته را از حد بگذراند، دستهٔ فعلی را push کن
             if [ $((batch_size_mb + file_size_mb)) -gt $MAX_BATCH_SIZE_MB ] && [ ${#batch[@]} -gt 0 ]; then
               echo "📦 ارسال دسته با حجم تقریبی ${batch_size_mb}MB (${#batch[@]} فایل)"
               git add "${batch[@]}"
@@ -485,16 +476,13 @@ jobs:
                   fi
                 fi
               done
-              # بازنشانی دسته
               batch=()
               batch_size_mb=0
             fi
-            # اضافه کردن فایل به دسته
             batch+=("$file")
             batch_size_mb=$((batch_size_mb + file_size_mb))
           done
 
-          # ارسال آخرین دسته (اگر چیزی باقی مانده باشد)
           if [ ${#batch[@]} -gt 0 ]; then
             echo "📦 ارسال آخرین دسته با حجم تقریبی ${batch_size_mb}MB (${#batch[@]} فایل)"
             git add "${batch[@]}"
@@ -516,4 +504,3 @@ jobs:
           fi
 
           echo "🎉 تمام فایل‌ها با موفقیت ارسال شدند."
-          
